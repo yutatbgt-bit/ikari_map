@@ -20,63 +20,103 @@ def scrape_ikari_stores():
     
     stores_info = {}
     
-    # info/author/ へのリンクを持つ <a> タグを起点として各店舗ブロックを特定
-    author_links = soup.find_all("a", href=re.compile(r"info/author/"))
-    
-    for a in author_links:
-        name = a.text.strip()
+    # 1. 主要店舗の抽出 (section.store_detail)
+    major_sections = soup.find_all("section", class_="store_detail")
+    for sec in major_sections:
+        name = ""
+        all_as = sec.find_all("a", href=re.compile(r"info/author/"))
+        for a in all_as:
+            t = a.text.strip()
+            if t and t != "詳細を見る":
+                name = t
+                break
+        
         if not name:
             continue
             
-        # 親のブロック要素 (article または section.store_detail) を探す
-        parent = a.find_parent("article")
-        if not parent:
-            parent = a.find_parent("section", class_="store_detail")
-        if not parent:
-            parent = a.find_parent("div", class_="info")
-            if parent:
-                parent = parent.parent
-                
-        if not parent:
-            continue
-            
-        # 画像URLの取得
-        img_tag = parent.find("img")
+        img_tag = sec.find("img")
         img_url = img_tag["src"] if img_tag else ""
         if img_url and img_url.startswith("/"):
             img_url = "https://www.ikarisuper.com" + img_url
             
-        # 詳細情報の抽出
         address = ""
         phone = ""
-        hours = ""
         parking = "なし"
+        hours = ""
         
-        dl = parent.find("dl")
+        dl = sec.find("dl")
         if dl:
-            dts = dl.find_all("dt")
-            dds = dl.find_all("dd")
-            details = {}
-            for dt, dd in zip(dts, dds):
-                key = dt.text.strip()
-                val = dd.text.strip()
-                details[key] = val
+            dts = [dt.text.strip() for dt in dl.find_all("dt")]
+            dds = [dd.text.strip() for dd in dl.find_all("dd")]
+            details = dict(zip(dts, dds))
+            address = details.get("所在地", "")
+            phone = details.get("電話番号", "")
+            parking = details.get("駐車場", "なし")
+            hours = details.get("営業時間", "")
+            
+        if name not in stores_info or (stores_info[name]["image_url"] == "" and img_url != ""):
+            stores_info[name] = {
+                "image_url": img_url,
+                "address": address,
+                "phone": phone,
+                "parking": parking,
+                "hours": hours
+            }
+
+    # 2. 一般店舗の抽出 (article タグ)
+    # id="contents" や class="pc_none" は除く
+    articles = soup.find_all("article")
+    for art in articles:
+        classes = art.get("class", [])
+        art_id = art.get("id", "")
+        
+        if "pc_none" in classes or art_id == "contents":
+            continue
+            
+        name = ""
+        all_as = art.find_all("a", href=re.compile(r"info/author/"))
+        for a in all_as:
+            t = a.text.strip()
+            if t and t != "詳細を見る":
+                name = t
+                break
+                
+        if not name:
+            continue
+            
+        img_tag = art.find("img")
+        img_url = img_tag["src"] if img_tag else ""
+        if img_url and img_url.startswith("/"):
+            img_url = "https://www.ikarisuper.com" + img_url
+            
+        address = ""
+        phone = ""
+        parking = "なし"
+        hours = ""
+        
+        dl = art.find("dl")
+        if dl:
+            dts = [dt.text.strip() for dt in dl.find_all("dt")]
+            dds = [dd.text.strip() for dd in dl.find_all("dd")]
+            details = dict(zip(dts, dds))
             address = details.get("所在地", "")
             phone = details.get("電話番号", "")
             parking = details.get("駐車場", "なし")
             hours = details.get("営業時間", "")
         else:
-            addr_tag = parent.find("p", class_="mgn_t5")
+            addr_tag = art.find("p", class_="mgn_t5")
             if addr_tag:
                 address = addr_tag.text.strip()
                 
-            p_tags = parent.find_all("p")
+            p_tags = art.find_all("p")
             for p in p_tags:
                 text = p.text.strip()
-                if "TEL" in text or "電話" in text:
-                    phone = text.split(":")[-1].strip()
+                if text.startswith("TEL"):
+                    phone = text.replace("TEL", "").replace(":", "").replace("：", "").strip()
                 elif "営業時間" in text:
-                    hours = text.split("：")[-1].strip()
+                    hours = text.replace("営業時間", "").replace(":", "").replace("：", "").strip()
+                elif "駐車場" in text:
+                    parking = text.replace("駐車場", "").replace(":", "").replace("：", "").strip()
                     
         if name not in stores_info or (stores_info[name]["image_url"] == "" and img_url != ""):
             stores_info[name] = {
@@ -93,7 +133,6 @@ def parse_current_config(config_path):
     if not os.path.exists(config_path):
         return {}
     
-    # 既存の config.md を読み込んで特徴などを退避
     existing_data = {}
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -116,6 +155,18 @@ def parse_current_config(config_path):
                     }
     return existing_data
 
+def clean_store_name(name):
+    """
+    店舗名を正規化して比較しやすくする。
+    例: 'いかり神戸三宮店' -> '神戸三宮'
+        '芦屋店' -> '芦屋'
+    """
+    n = name.strip()
+    n = n.replace("いかり", "").replace("スーパー", "").replace("（本店）", "").replace("(本店)", "")
+    if n.endswith("店") and n not in ["ラ・グルメゾン", "ライクスホール"]:
+        n = n[:-1]
+    return n.strip()
+
 def update_config():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
@@ -132,27 +183,30 @@ def update_config():
     final_stores = {}
     for web_name, web_info in scraped.items():
         # 表記揺れの正規化
-        norm_web = web_name.replace("いかり", "").replace("スーパー", "").replace("（本店）", "").strip()
-        
-        # デフォルトの特徴値
-        features = f"いかりスーパー{web_name}。公式住所: {web_info['address']}"
-        
-        # 既存の手動設定から特徴（features）を引き継ぐ
-        for ex_name, ex_info in existing.items():
-            norm_ex = ex_name.replace("いかり", "").replace("スーパー", "").replace("（本店）", "").strip()
-            if norm_web == norm_ex or norm_ex in norm_web or norm_web in norm_ex:
-                if ex_info.get("features"):
-                    features = ex_info["features"]
-                break
+        norm_web = clean_store_name(web_name)
         
         # config.md 用のキーを短い名前に統一 (e.g. "いかり芦屋店" -> "芦屋店")
         store_key = web_name
         if web_name.startswith("いかり"):
             store_key = web_name.replace("いかり", "", 1).replace("スーパー", "", 1).replace("（本店）", "").strip()
             
+        if store_key == "詳細を見る" or not store_key:
+            continue
+            
         # 特定の愛蓮などの系列レストランは除外
         if "愛蓮" in store_key:
             continue
+            
+        # デフォルトの特徴値
+        features = f"いかりスーパー{store_key}。公式住所: {web_info['address']}"
+        
+        # 既存の手動設定から特徴（features）を引き継ぐ
+        for ex_name, ex_info in existing.items():
+            norm_ex = clean_store_name(ex_name)
+            if norm_web == norm_ex:
+                if ex_info.get("features"):
+                    features = ex_info["features"]
+                break
             
         final_stores[store_key] = {
             "address": web_info["address"],

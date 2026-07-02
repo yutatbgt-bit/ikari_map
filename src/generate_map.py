@@ -140,9 +140,10 @@ def main():
     combined_data_str = combined_data_str.replace('</', '\\u003c/')
 
     import base64
-    logo_path = r"C:\Users\yutat\.gemini\antigravity\brain\705f0ccf-67fb-4770-a6a3-18b561a5ae03\media_seamless.png"
-    anchor_path = r"C:\Users\yutat\.gemini\antigravity\brain\705f0ccf-67fb-4770-a6a3-18b561a5ae03\scratch\anchor_logo.png"
-    text_path = r"C:\Users\yutat\.gemini\antigravity\brain\705f0ccf-67fb-4770-a6a3-18b561a5ae03\scratch\ikari_text.png"
+    assets_dir = os.path.join(project_root, "assets")
+    logo_path = os.path.join(assets_dir, "header_bg_seamless.png")
+    anchor_path = os.path.join(assets_dir, "anchor_logo.png")
+    text_path = os.path.join(assets_dir, "ikari_text.png")
 
     base64_logo = ""
     if os.path.exists(logo_path):

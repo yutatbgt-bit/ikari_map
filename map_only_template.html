@@ -328,6 +328,9 @@
     body.dark-theme .header-url {
       color: #ffffff;
     }
+    body.dark-theme .header-logo img[alt="ikari"] {
+      filter: brightness(0) invert(1);
+    }
     body.dark-theme .floating-info-card {
       background: rgba(15, 23, 42, 0.98); /* より暗く落ち着いたカード背景 */
       border-color: var(--accent);
@@ -443,6 +446,9 @@
 
     // 2. マップ上の表示マーカー管理
     let activeMarkers = {};
+    let isInfoLocked = false;      // カード表示のロック状態
+    let hoverTimerId = null;       // 2秒タイマーのID
+    let currentHoverMarker = null; // ホバー中のマーカー識別キー
 
     function initMap() {
       // 既存マーカーのクリア
@@ -482,15 +488,43 @@
             window.open(validDetailUrl, '_blank', 'noopener,noreferrer');
           });
         }
-        // ホバー時にフローティングカードを表示するイベント
+        // ホバー時にフローティングカードを表示するイベント（2秒ロック機能付き）
+        const markerKey = 'ikari_' + name;
         marker.on('mouseover', (e) => {
           if (e.originalEvent) {
             e.originalEvent.stopPropagation();
           }
+          // ロック中は別のピンの情報に切り替えない
+          if (isInfoLocked) return;
+
+          // 前のタイマーが残っていればクリア
+          if (hoverTimerId !== null) {
+            clearTimeout(hoverTimerId);
+            hoverTimerId = null;
+          }
+
+          currentHoverMarker = markerKey;
           showInfoCard(name, info, validImgUrl);
+
+          // 2秒間ピン上にカーソルが留まったらロック
+          hoverTimerId = setTimeout(() => {
+            if (currentHoverMarker === markerKey) {
+              isInfoLocked = true;
+            }
+            hoverTimerId = null;
+          }, 2000);
+        });
+
+        // ピンからカーソルが離れたらタイマーをキャンセル（ロック確定前のみ）
+        marker.on('mouseout', () => {
+          if (hoverTimerId !== null) {
+            clearTimeout(hoverTimerId);
+            hoverTimerId = null;
+          }
+          currentHoverMarker = null;
         });
         
-        activeMarkers['ikari_' + name] = marker;
+        activeMarkers[markerKey] = marker;
       }
       
       // 4. 地図の自動ズーム/センタリング調整
@@ -606,6 +640,13 @@
       if (card) {
         card.classList.remove('active');
       }
+      // ロック状態とタイマーを全てリセット
+      isInfoLocked = false;
+      if (hoverTimerId !== null) {
+        clearTimeout(hoverTimerId);
+        hoverTimerId = null;
+      }
+      currentHoverMarker = null;
     }
 
     // ページのロード完了時にマップを初期化

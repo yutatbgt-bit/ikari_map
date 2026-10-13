@@ -270,9 +270,7 @@ def update_config(target_store=None):
             if matched_key and existing[matched_key].get("features"):
                 features = existing[matched_key]["features"]
                 
-            manager = web_info["manager"]
-            if matched_key and existing[matched_key].get("manager"):
-                manager = existing[matched_key]["manager"]
+            manager = web_info["manager"] if web_info.get("manager") else (existing[matched_key].get("manager", "") if matched_key else "")
                 
             final_stores[store_key] = {
                 "coords": coords,
@@ -300,7 +298,7 @@ def update_config(target_store=None):
                     coords = ex_info["coords"]
                     if ex_info.get("features"):
                         features = ex_info["features"]
-                    if ex_info.get("manager"):
+                    if not manager and ex_info.get("manager"):
                         manager = ex_info["manager"]
                     break
                     
@@ -317,18 +315,31 @@ def update_config(target_store=None):
             }
             
     # 4. config.md の書き出し
-    markdown_lines = [
-        "# 店舗情報設定",
-        "",
-        "このファイルで、マップに表示されるいかりスーパー各店舗の情報（座標、住所、営業時間、駐車場、特徴、画像など）を手動で変更・更新できます。",
-        "",
-        "### 設定テーブル",
-        "※「店舗名」は変更しないでください（マッチングに使用します）。",
-        "※ 各店舗ごとの情報（座標、住所、電話番号、駐車場、営業時間、特徴、画像URL）を書き換えて保存した後、フォルダ内の `run_update.bat` を実行するとマップに反映されます。",
-        "",
+    header_lines = []
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip().startswith("|") and "店舗名" in line and "住所" in line:
+                    break
+                header_lines.append(line.rstrip("\r\n"))
+    
+    if not header_lines:
+        header_lines = [
+            "# 店舗情報設定",
+            "",
+            "このファイルで、マップに表示されるいかりスーパー各店舗の情報（座標、住所、営業時間、駐車場、特徴、画像など）を手動で変更・更新できます。",
+            "",
+            "### 設定テーブル",
+            "※「店舗名」は変更しないでください（マッチングに使用します）。",
+            "※ 各店舗ごとの情報（座標、住所、電話番号、駐車場、営業時間、特徴、画像URL）を書き換えて保存した後、フォルダ内の `run_update.bat` を実行するとマップに反映されます。",
+            ""
+        ]
+
+    markdown_lines = list(header_lines)
+    markdown_lines.extend([
         "| 店舗名 | 座標 | 住所 | 電話番号 | 駐車場 | 営業時間 | 特徴 | 店長の一言 | 画像URL | 詳細URL |",
         "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
-    ]
+    ])
     
     for name, info in sorted(final_stores.items()):
         coords = info["coords"].replace("|", "\\|")
@@ -349,7 +360,7 @@ def update_config(target_store=None):
     with open(config_path, "w", encoding="utf-8") as f:
         f.write("\n".join(markdown_lines) + "\n")
         
-    print(f"Successfully updated config.md with website information. (Existing coords and features retained)")
+    print(f"Successfully updated config.md with website information. (Existing coords and features retained, managers updated)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update ikari store database from official website.")
